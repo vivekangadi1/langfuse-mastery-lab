@@ -34,7 +34,8 @@
 # rule) must **ship**, exit 0.
 #
 # **False block vs false pass.** An LLM at temperature 0 is still not deterministic (module 09: production itself
-# missed items it usually gets right). A gate that blocks on any single difference blocks good PRs (**false block**:
+# missed items it usually gets right), and a GPT-5-family deployment can't even be set to 0: it runs at its default
+# temperature, so expect more suspects. A gate that blocks on any single difference blocks good PRs (**false block**:
 # people learn to click "re-run" or to bypass it). A gate that averages everything lets a broken intent through
 # (**false pass**: the incident ships). This gate's answer: decide on **items**, re-run only the **suspects** on
 # **both** sides, and call an item regressed only when a **majority** of attempts says so. You'll tune the knobs.

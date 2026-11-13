@@ -118,6 +118,25 @@ with the oracle LLM (no Azure calls); verify refuses dry traffic.
 
 Module 14 is the **capstone**: one planted regression flows through every layer, and it runs YOUR code from modules 04 and 06-12 (its prerequisites cell lists what to finish first). The agent serves the prompt label **`live`**; `production` is the version the gate approved. A planted deploy moves `live` to module 04's staging candidate (login → billing); the judge (your module 07 rule if it is enabled, else module 08's stand-in) is the only quality signal; your module 12 alert job pages on the judge pass rate; TODO 2 fills a new annotation queue **`incident-review`** (configs `human_routing_ok`, `review_error_type` and a new `expected_handoff`; queues can't be edited or deleted) with the flagged requests plus a control; you label them in the UI (or set `SCRIPTED_REVIEW = True`); TODO 3 turns the confirmed failures into items of `support-regression` (a given cell first applies module 09's invoice label fix if your dataset still has module 10's seed label: a wrong label makes the gate block correct fixes); TODO 4 runs two fixes (label **`hotfix`**) through module 10's gate as a subprocess: the quick fix must be blocked, the fix shipped and promoted (`production` + `live`). Every label move also writes a **comment on the prompt version** (OSS has no audit log). TODO 5 builds the evidence trail; the report lands in `langfuse_mastery/loop_out/<run id>/` (git-ignored: `incident-report.html`, `.md`, `evidence.json`, the receiver log, the gate artifacts). The receiver listens on `127.0.0.1:80` (port 80 must be free). Note that the module moves your `production` and `live` labels of `support-agent-system` (it starts by putting both on the approved version, and ends with them on the promoted fix). About 9 agent turns plus two gate runs on a ~9-item dataset (≈95 Azure calls; with your module 07 rule, ≈18 more judge calls by the worker). Set `LOOP_DRY_RUN=1` to rehearse with the oracle LLM and a dry gate (no Azure calls); verify refuses dry traffic.
 
+## Running on one model
+
+The course assumes two Azure deployments: a cheap agent (`AZURE_OPENAI_DEPLOYMENT=gpt-4.1-mini`) and an expensive judge
+(`EVAL_JUDGE_MODEL=gpt-5.2-chat`). It also runs on **one GPT-5-family deployment** for both, e.g. `gpt-5.4` in both
+variables. The lab detects that (`Settings.single_model`). GPT-5 / o-series deployments reject `temperature=0` and
+`max_tokens`, so the agent sends no temperature and renames `max_tokens` to `max_completion_tokens`. This is decided
+from the deployment name: if yours doesn't start with `gpt-5`/`o1`/`o3`/`o4`, set `LLM_TEMPERATURE=off` in `.env`.
+Verified live with `gpt-5.2-chat` standing in for `gpt-5.4`.
+
+| # | On one GPT-5 deployment |
+|---|---|
+| 00–02, 05, 13 | works |
+| 03 | works, single-model variant: one model definition (`azure-<deployment>`; list prices in `langfuse_lab/pricing.py`, including `output_reasoning`; check the `gpt-5.4` row against your Azure prices). The planted `cost_spike` can't switch to a pricier model, so v2 ships a ~17,600-token padded prompt behind a per-call `Request time:` line that defeats Azure's prompt cache (live: 20–30× the clean median). The session budget scales with the agent's price (0.071 USD on `gpt-5.4`). There is no cheap-vs-expensive model row to compare. v2 sends about 90k input tokens in under a minute, which a low tokens-per-minute quota may throttle (the client retries). |
+| 04 | works: the prompt config's `temperature` is never sent and `max_tokens` goes out as `max_completion_tokens`; verify checks what was sent. In the Playground, switch temperature off. |
+| 06, 11 | works (the planted `wrong_handoff` still misroutes on GPT-5; `slow_tool` is latency only) |
+| 07, 08, 14 | works, with a caveat: the judge is the agent's own model, so it can share its blind spots (calibration, TODO 5 of module 07, is the safeguard). The LLM connection lists the one deployment (a duplicate in `custom_models` is accepted). Module 14's quick fix still misroutes double charges, so the gate still blocks it. |
+| 09, 10 | works, with a caveat: without temperature 0, runs vary more, so expect more suspects and re-runs (a few more Azure calls) |
+| 12 | works, with a caveat: the clean window must page nothing, and with more run-to-run variance a DIY cost or latency rule can fire on noise: re-run with a new `RUN_TAG` |
+
 ## Rebuilding notebooks
 
 The notebooks are generated from percent-format sources in `src/`. To rebuild them, run this from `ch09/`:

@@ -309,7 +309,8 @@ print("top 3 users by cost:", [(r["userId"], r["sum_totalCost"]) for r in top])
 # **per-version** breakdown, and the **top users by cost** (top-N: `row_limit` + `orderBy desc`).
 #
 # Expected: both windows show 7 requests and the same error rate (2 of 7: the unknown order and the blocked
-# injection) and the same cost (temperature 0, same requests); `latency_ms.tool.lookup_order.p95` jumps from a few ms
+# injection) and about the same cost (same requests; a GPT-5-family deployment, which runs at its default temperature,
+# varies a little more); `latency_ms.tool.lookup_order.p95` jumps from a few ms
 # to about 3,000 ms, and `feedback_share.thumbs_down` from 0 to ~0.4 (users notice slow replies). Report every level
 # and feedback label, with 0 when absent: a share that is missing last week can't be compared (the docstring says how).
 

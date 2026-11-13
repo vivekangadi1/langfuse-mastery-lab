@@ -54,10 +54,18 @@ Then:
 ## Running on one GPT-5-family model (e.g. gpt-5.4)
 The course was built and validated with two deployments: `gpt-4.1-mini` as the agent and `gpt-5.2-chat` as the judge.
 
-**What works with one model:**
-- **The agent runs on a single GPT-5-family deployment.** GPT-5 and o-series models reject `temperature=0` and `max_tokens`, so the lab automatically sends no temperature and uses `max_completion_tokens` instead.
-- **This was checked live** with gpt-5.2-chat as the only model.
-- **How the model is detected:** from the deployment name (`gpt-5…`, `o1/o3/o4…`). If your deployment name doesn't start with the model name, add `LLM_TEMPERATURE=off` to `.env`.
-- **Modules 00–02 and 06** need nothing else.
+**All 15 modules run on one deployment.** Set `AZURE_OPENAI_DEPLOYMENT` and `EVAL_JUDGE_MODEL` to the same name. The lab notices this (`Settings.single_model`) and adapts:
+- **Parameters:** GPT-5 and o-series models reject `temperature=0` and `max_tokens`. The agent sends no temperature and uses `max_completion_tokens`, and module 04's verify expects exactly that.
+- **Detection:** the model is recognized from the deployment name (`gpt-5…`, `o1/o3/o4…`). If your deployment name doesn't start with the model name, add `LLM_TEMPERATURE=off` to `.env`.
+- **This was checked live** with gpt-5.2-chat as the only model, for the agent turns, module 03's cost spike, module 04's parameters, module 07's server-side judge, and the planted failures. About 34 Azure calls.
 
-**Still being checked:** later modules that deliberately compare two models, e.g. module 03's "expensive model" cost spike, and the server-side judge in module 07 are being reviewed for single-model use.
+| Modules | On one GPT-5 deployment |
+|---|---|
+| 00, 01, 02, 05, 06, 11, 13 | work as written |
+| 03 cost | **Single-model variant.** The planted spike is a prompt-cache-busting ~17k-token padding instead of "switch to the expensive model". The per-conversation budget scales with your model's price. v2 sends about 90k input tokens in under a minute, so a low tokens-per-minute quota may throttle it (the client retries). |
+| 04 prompts | Works. The prompt config's temperature is never sent; verify accounts for that. Turn temperature off in the Playground. |
+| 07, 08, 14 | Work. The judge is the agent's own model, so it can share its blind spots. Module 07's calibration step (judge vs code score) is how you find out. |
+| 09, 10 | Work. GPT-5 can't run at temperature 0, so expect more "suspect" items and re-runs (a few extra calls). |
+| 12 | Works. With more run-to-run variance, a cost or latency rule can fire on noise in a clean window; re-run with a new `RUN_TAG`. |
+
+**Check the prices.** Module 03 uses list prices from `ch09/langfuse_lab/pricing.py`: gpt-5.4 at $2.50 input / $0.25 cached / $15.00 output per 1M tokens, which is **an assumption**. Check them against your Azure agreement. If your deployment name isn't in that table, module 03 stops with a clear message asking you to add a row.

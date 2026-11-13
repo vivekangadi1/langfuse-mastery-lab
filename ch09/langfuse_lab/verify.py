@@ -709,8 +709,9 @@ def check_module_06(run_tag: str, *, session_id: str, client=None, expected_trac
 # (gpt-4.1-mini -> "gpt-4.1-mini-2025-04-14", gpt-5.2-chat -> "gpt-chat-latest"; a failed call keeps the deployment
 # name). An unmatched generation keeps usage_details but has cost_details={}, total_cost=None, internal_model_id="".
 # Cost is computed at ingestion, so definitions only price traces ingested after they exist.
+# GPT-5 reasoning tokens: the LangChain handler moves them out of `output` into `output_reasoning` (they need a price).
 COST_FIELDS = FIELDS + ",usage,model"
-MODEL_DEFS = ("azure-gpt-4.1-mini", "azure-gpt-5.2-chat")
+MODEL_DEFS = ("azure-gpt-4.1-mini", "azure-gpt-5.2-chat")  # two deployments; one deployment: pass model_defs=
 REQUIRED_PRICES = ("input", "output", "input_cache_read")
 SPIKE_TAG = "cost_spike"
 
@@ -759,14 +760,18 @@ def _median(values: list[float]) -> float:
 
 
 def module_03_checks(run_tag: str, client, *, session_costs: dict, user_costs: dict, flagged_sessions,
-                     expected_traces: int | None = 7, spike_factor: float = 5.0) -> list[Check]:
+                     expected_traces: int | None = 7, spike_factor: float = 5.0,
+                     model_defs=MODEL_DEFS) -> list[Check]:
     """Cost checks over every support-request root tagged `run_tag`. They cover:
-    - the learner's two custom model definitions (one each, priced per token, cached input priced),
+    - the learner's custom model definitions `model_defs` (one each, priced per token, cached input priced): one per
+      distinct deployment (`pricing.definitions`), so a single-deployment course has one,
     - every generation priced BY those definitions (not unmatched, not a built-in),
-    - usage details incl. cached tokens,
+    - usage details incl. cached tokens (and reasoning tokens, when a GPT-5 model produced any),
     - the learner's per-session / per-user cost query, against the observations API's own numbers,
-    - the planted cost_spike: visibly more expensive, and flagged by the learner's budget check.
+    - the planted cost_spike: visibly more expensive, and flagged by the learner's budget check. (Two deployments:
+      the expensive model + a padded prompt. One deployment: a bigger padded prompt that defeats the prompt cache.)
     """
+    model_defs = tuple(model_defs)
 
     def fetch():
         return {"traces": fetch_run(client, run_tag, expected_traces=expected_traces, fields=COST_FIELDS),
@@ -797,7 +802,7 @@ def module_03_checks(run_tag: str, client, *, session_costs: dict, user_costs: d
 
     def definitions_once():
         models, problems = snapshot.get()["models"], []
-        for name in MODEL_DEFS:
+        for name in model_defs:
             found = models.get(name, [])
             if not found:
                 problems.append(f"{name}: missing")
@@ -817,10 +822,10 @@ def module_03_checks(run_tag: str, client, *, session_costs: dict, user_costs: d
                                 "not per 1M tokens (use cost.per_token)")
         if problems:
             return False, "; ".join(problems)
-        return True, ", ".join(f"{n} ~ {models[n][0].get('matchPattern')}" for n in MODEL_DEFS)
+        return True, ", ".join(f"{n} ~ {models[n][0].get('matchPattern')}" for n in model_defs)
 
     def priced_by_yours():
-        mine = {m["id"]: name for name in MODEL_DEFS for m in snapshot.get()["models"].get(name, [])}
+        mine = {m["id"]: name for name in model_defs for m in snapshot.get()["models"].get(name, [])}
         gens, problems = generations(), {}
         for _, g in gens:
             model = getattr(g, "model", None)
@@ -837,7 +842,7 @@ def module_03_checks(run_tag: str, client, *, session_costs: dict, user_costs: d
 
     def usage_captured():
         gens = generations()
-        cached, problems = 0, []
+        cached, reasoning, problems = 0, 0, []
         for r, g in gens:
             usage, cost = getattr(g, "usage_details", None) or {}, getattr(g, "cost_details", None) or {}
             if not (usage.get("input") or usage.get("input_cache_read")) or not usage.get("output"):
@@ -847,10 +852,17 @@ def module_03_checks(run_tag: str, client, *, session_costs: dict, user_costs: d
                 if not cost.get("input_cache_read"):
                     problems.append(f"generation {g.id} read {usage['input_cache_read']} cached tokens that cost 0: "
                                     "add an input_cache_read price to its definition")
+            if usage.get("output_reasoning"):
+                reasoning += usage["output_reasoning"]
+                if not cost.get("output_reasoning"):
+                    problems.append(f"generation {g.id} produced {usage['output_reasoning']} reasoning tokens that "
+                                    "cost 0: add an output_reasoning price (the output price) to its definition")
         if problems:
             return False, "; ".join(problems[:3]) + (f" (+{len(problems) - 3} more)" if len(problems) > 3 else "")
         note = (f"{cached} cached input token(s), priced" if cached
                 else "no cached tokens in this run (Azure caches prompts >= 1024 tokens)")
+        if reasoning:
+            note += f"; {reasoning} reasoning token(s), priced"
         return True, f"{len(gens)} generation(s) with input/output usage; {note}"
 
     def matches(label: str, theirs: dict, attr: str):
@@ -878,7 +890,8 @@ def module_03_checks(run_tag: str, client, *, session_costs: dict, user_costs: d
         weak = [f"{r.trace_id} ${c:.5f}" for r, c in spikes if c <= 0 or c < spike_factor * base]
         if weak:
             return False, (f"{SPIKE_TAG} trace(s) not >= {spike_factor:g}x the clean median ${base:.5f}: "
-                           + ", ".join(weak) + " (is the expensive model priced?)")
+                           + ", ".join(weak) + " (is the model the spike runs on priced? With one deployment the "
+                           "spike is its padded prompt: are its generations' input tokens uncached?)")
         spike_sessions = {r.session_id for r, _ in spikes}
         flagged = set(flagged_sessions or ())
         if flagged != spike_sessions:
@@ -899,10 +912,13 @@ def module_03_checks(run_tag: str, client, *, session_costs: dict, user_costs: d
 
 
 def check_module_03(run_tag: str, *, session_costs: dict, user_costs: dict, flagged_sessions, client=None,
-                    expected_traces: int | None = 7, retries: int = 12, **run_kwargs) -> bool:
+                    expected_traces: int | None = 7, retries: int = 12, model_defs=MODEL_DEFS, **run_kwargs) -> bool:
+    """`model_defs`: the custom definitions' names, one per distinct deployment
+    (`[d["model_name"] for d in pricing.definitions(settings)]`); the default is the two-deployment pair."""
     client = client or get_client()
     checks = module_03_checks(run_tag, client, session_costs=session_costs, user_costs=user_costs,
-                              flagged_sessions=flagged_sessions, expected_traces=expected_traces)
+                              flagged_sessions=flagged_sessions, expected_traces=expected_traces,
+                              model_defs=model_defs)
     return _check_module(checks, client, retries=retries, **run_kwargs)
 
 
@@ -951,16 +967,23 @@ def _handoffs(items) -> list[str]:
 
 
 def module_04_checks(run_tag: str, client, *, prompt_name: str | None = None,
-                     expected_traces: int | None = 6) -> list[Check]:
+                     expected_traces: int | None = 6, agent_deployment: str | None = None) -> list[Check]:
     """Prompt-management checks over every support-request root tagged `run_tag` (phases via `phase:*` tags):
     - the managed prompt: good + bad versions, created once each (get-or-create by content),
     - labels after the exercise: production = good (rolled back), staging = bad (kept for module 09),
     - every generation linked to a prompt version, with that version's config applied,
     - the planted bad version: its traffic is attributable to it and misroutes; post-rollback traffic is good.
+    `agent_deployment` (settings.agent_deployment): "config applied" compares the generation's modelParameters with
+    what the agent SENDS that deployment for the config (`config.sent_params`): on a GPT-5 / o-series deployment
+    temperature is never sent and max_tokens goes out as max_completion_tokens. None: the config as stored.
     """
+    from .config import sent_params
     from .prompts import PROMPT_CONFIG, PROMPT_NAME, SYSTEM_PROMPT_TEMPLATE, WRONG_HANDOFF_TEMPLATE
 
     name = prompt_name or PROMPT_NAME
+
+    def sent(cfg: dict) -> dict:
+        return sent_params(cfg, agent_deployment) if agent_deployment else dict(cfg)
 
     def fetch():
         return {"traces": fetch_run(client, run_tag, expected_traces=expected_traces, fields=PROMPT_FIELDS),
@@ -1059,7 +1082,7 @@ def module_04_checks(run_tag: str, client, *, prompt_name: str | None = None,
         for r, items in snapshot.get()["traces"]:
             for o in gens(items):
                 cfg = (rows.get(getattr(o, "prompt_version", None)) or {}).get("config") or {}
-                want = {k: cfg[k] for k in PROMPT_PARAMS if k in cfg}
+                want = sent({k: cfg[k] for k in PROMPT_PARAMS if k in cfg})
                 if not want:
                     continue
                 n += 1
@@ -1073,7 +1096,10 @@ def module_04_checks(run_tag: str, client, *, prompt_name: str | None = None,
                            + ". Pass prompting.llm_params(prompt.config) as llm_params= to agent.invoke")
         if not n:
             return False, "no linked generation's prompt version has a temperature/max_tokens config"
-        return True, f"{n} generation(s) ran with their version's config " + str({k: PROMPT_CONFIG[k] for k in PROMPT_PARAMS})
+        stored = {k: PROMPT_CONFIG[k] for k in PROMPT_PARAMS}
+        shown = sent(stored)
+        note = "" if shown == stored else f" (sent to {agent_deployment} as {shown}: it takes no temperature)"
+        return True, f"{n} generation(s) ran with their version's config " + str(stored) + note
 
     def bad_version_caught():
         good, bad = good_bad()
@@ -1129,9 +1155,10 @@ def module_04_checks(run_tag: str, client, *, prompt_name: str | None = None,
 
 
 def check_module_04(run_tag: str, *, client=None, prompt_name: str | None = None, expected_traces: int | None = 6,
-                    retries: int = 12, **run_kwargs) -> bool:
+                    retries: int = 12, agent_deployment: str | None = None, **run_kwargs) -> bool:
     client = client or get_client()
-    checks = module_04_checks(run_tag, client, prompt_name=prompt_name, expected_traces=expected_traces)
+    checks = module_04_checks(run_tag, client, prompt_name=prompt_name, expected_traces=expected_traces,
+                              agent_deployment=agent_deployment)
     return _check_module(checks, client, retries=retries, **run_kwargs)
 
 

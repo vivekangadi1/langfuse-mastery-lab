@@ -7,7 +7,7 @@
 #
 # | Concept | What it is | In our support agent |
 # |---|---|---|
-# | **LLM connection** | provider credentials stored in Langfuse (upserted by `provider` name); the *worker* calls it | Azure OpenAI, deployments `gpt-5.2-chat` + `gpt-4.1-mini` |
+# | **LLM connection** | provider credentials stored in Langfuse (upserted by `provider` name); the *worker* calls it | Azure OpenAI, deployments `gpt-5.2-chat` + `gpt-4.1-mini` (or your one deployment) |
 # | **Evaluator** | the *how*: judge prompt with `{{variables}}`, structured output (BOOLEAN / NUMERIC / CATEGORICAL), model. Versioned | `routing_judge` (BOOLEAN), `helpfulness_judge` (NUMERIC 0..1) |
 # | **Evaluation rule** | the *which*: filters on **observations**, a sampling rate, and the evaluators to run | root `support-request` spans of traces tagged `live-eval` |
 # | **Variable mapping** | fills each prompt variable from the observation's `input`, `output`, `metadata` (+ JSONPath) or `tool_calls` | `handoff` ← `metadata` `$.handoff_target` |
@@ -67,7 +67,7 @@ PREFIX = ""
 NAMES = {role: PREFIX + base for role, base in verify.LIVE_NAMES.items()}
 LIVE_TAG = PREFIX + "live-eval"      # traffic opts in to live evaluation with this tag
 ROOT_NAME = verify.LIVE_ROOT_NAME    # "support-request": the root observation the rule judges
-JUDGE_MODEL = settings.expensive_deployment  # gpt-5.2-chat (EVAL_JUDGE_MODEL)
+JUDGE_MODEL = settings.expensive_deployment  # EVAL_JUDGE_MODEL: gpt-5.2-chat, or the agent's own deployment
 
 CASES = traffic.live_eval_cases(run_id=RUN_ID)
 print("run tag:", RUN_TAG, "| judge:", JUDGE_MODEL)
@@ -173,7 +173,7 @@ print("code score config:", {k: v["id"] for k, v in CONFIGS.items()})
 #   `https://<resource>.cognitiveservices.azure.com/openai`. `settings.azure_endpoint` may carry a longer path
 #   (`/openai/deployments/…?api-version=…`): keep only scheme + host (`urllib.parse.urlsplit`).
 # - **`custom_models`**: Azure *deployment names*, both `settings.expensive_deployment` (the judge) and
-#   `settings.agent_deployment`.
+#   `settings.agent_deployment`, each listed once (with a single deployment for everything they are the same name).
 # - The secret is stored encrypted and never read back. `list()` only shows `display_secret_key` (`...Z02w`).
 #
 # Who calls this URL? Not your notebook: the **langfuse worker container**. If judge scores never arrive later, the
@@ -215,6 +215,8 @@ print(connection.provider, connection.adapter, connection.base_url, connection.c
 #   `.output_definition` and `.model_config_` (compare their `.dict(exclude_none=True)`).
 #
 # The prompts and mappings are given below. Read them: a judge is only as good as what it's told, and what it can see.
+# (Running on one deployment, the judge is the agent's own model, so it can share the agent's blind spots. The
+# calibration in TODO 5 against the code score is how you find out; in production, prefer a judge from another model.)
 # (A first draft said just "refund -> billing_specialist". During validation the judge then flagged the plain
 # "What is your refund policy?" question as mis-routed, a false alarm that calibration (TODO 5) exposed. The wording
 # below fixes that. Change the prompt and re-run `ensure_evaluator`, and you get version 2.)

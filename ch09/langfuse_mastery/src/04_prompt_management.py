@@ -312,12 +312,14 @@ for row in metrics(["promptName", "promptVersion"]):
 # Verify waits for all 6 traces, then checks:
 # - the good and the bad template each exist **once** as a version of `support-agent-system`, with the config,
 # - `production` ended on the good version and `staging` on the bad candidate (module 09 will compare the two),
-# - **every** generation is linked to a prompt version, and ran with that version's `temperature` / `max_tokens`,
+# - **every** generation is linked to a prompt version, and ran with that version's `temperature` / `max_tokens`
+#   (on a GPT-5-family deployment the agent never sends `temperature`, which it rejects, and sends `max_tokens` as
+#   `max_completion_tokens`, so that is what verify expects in the generation's model parameters),
 # - the planted bad version is caught: the phase-2 traces are linked to **it** and at least one login was misrouted,
 # - after the rollback, new traffic is linked to the good version and routed to `account_security`.
 
 # %%
-verify.check_module_04(RUN_TAG, expected_traces=6)
+verify.check_module_04(RUN_TAG, expected_traces=6, agent_deployment=settings.agent_deployment)
 
 # %% [markdown]
 # ## Demo: the cache when a label moves *somewhere else*
@@ -358,9 +360,10 @@ print("staging restored to the candidate v%s" % langfuse.api.prompts.get(PROMPT_
 # - [ ] The prompt's **Metrics** tab: generations, latency, cost and scores per version. Once module 06/07 scores exist,
 #   this is where a bad version shows up as a quality drop.
 # - [ ] **Playground**: open v1 from the prompt page (*Playground* button), fill `company` / `max_sentences`, send
-#   "I can't log in to my account cust_02." to `gpt-4.1-mini` (needs an LLM connection: Settings → LLM Connections,
-#   which module 07 sets up). Then open v2 side by side. The Playground runs the prompt text only, without the agent's
-#   tools, so it's for wording; behaviour is tested with real traffic and experiments (module 09).
+#   "I can't log in to my account cust_02." to your agent deployment (needs an LLM connection: Settings → LLM
+#   Connections, which module 07 sets up; on a GPT-5-family deployment, switch temperature off in the model
+#   parameters: it only accepts its default). Then open v2 side by side. The Playground runs the prompt text only,
+#   without the agent's tools, so it's for wording; behaviour is tested with real traffic and experiments (module 09).
 #
 # ## Production notes
 # - **Serve by label, never by version number**, and let the label be the deploy. A rollback is the same operation:

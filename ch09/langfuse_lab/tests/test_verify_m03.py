@@ -188,3 +188,75 @@ def test_check_module_03_reports(capsys):
     assert check_module_03("run:x", session_costs=s, user_costs=u, flagged_sessions=f,
                            client=client(items, rows), retries=1) is True
     assert "MODULE PASSED" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------- one deployment for everything (e.g. gpt-5.4)
+ONE = "m-one"
+PRICES_ONE = {"input": 2.5e-6, "output": 1.5e-5, "input_cache_read": 2.5e-7, "output_reasoning": 1.5e-5}
+
+
+def single_run():
+    """Same 7 turns, all on ONE model: the spike is the uncached padded prompt (big input, no cache reads)."""
+    def g(gid, tid, cost, **kw):
+        return gen(gid, tid, cost, model_name="gpt-5.4-2026-03-05", mid=ONE, **kw)
+
+    items = [
+        root("t1", "sA", "u0"), g("g1", "t1", 0.0015), g("g1b", "t1", 0.0012),
+        root("t2", "sA", "u0"), g("g2", "t2", 0.0018),
+        root("t3", "sC", "u1"), g("g3", "t3", 0.0016),
+        root("t4", "sC", "u1"), g("g4", "t4", 0.0014),
+        root("t5", "sD", "u5"), g("g5", "t5", 0.0013),
+        root("t6", "sB", "u2", tags=["cost_spike"]),
+        g("g6", "t6", 0.029, usage={"input": 11400, "input_cache_read": 0, "output": 40, "total": 11440}),
+        g("g6b", "t6", 0.029, usage={"input": 11500, "input_cache_read": 0, "output": 30, "total": 11530}),
+        root("t7", "sB", "u2", tags=["cost_spike"]),
+        g("g7", "t7", 0.030),
+    ]
+    rows = [model("builtin-5", "gpt-5.4", "(?i)^(openai/)?(gpt-5.4)$", PRICES_ONE, managed=True),
+            model(ONE, "azure-gpt-5.4", r"(?i)^gpt-5\.4(-\d{4}-\d{2}-\d{2})?$", PRICES_ONE)]
+    sessions = {"sA": 0.0045, "sC": 0.0030, "sD": 0.0013, "sB": 0.088}
+    users = {"u0": 0.0045, "u1": 0.0030, "u5": 0.0013, "u2": 0.088}
+    return items, rows, sessions, users, ["sB"]
+
+
+def test_single_deployment_passes_with_its_one_definition():
+    r = results(*single_run(), model_defs=("azure-gpt-5.4",))
+    assert all(v[0] is True for v in r.values()), r
+    assert "azure-gpt-5.4" in r["every generation priced by your definitions"][1]
+
+
+def test_single_deployment_still_needs_the_pair_by_default():
+    """The default stays the two-deployment pair: nothing passes by accident when the notebook forgets model_defs."""
+    ok, detail = results(*single_run())["model definitions defined once"]
+    assert not ok and "azure-gpt-4.1-mini: missing" in detail
+
+
+def test_check_module_03_passes_model_defs_through(capsys):
+    items, rows, s, u, f = single_run()
+    assert check_module_03("run:x", session_costs=s, user_costs=u, flagged_sessions=f, client=client(items, rows),
+                           retries=1, model_defs=("azure-gpt-5.4",)) is True
+    assert "MODULE PASSED" in capsys.readouterr().out
+
+
+def test_unpriced_reasoning_tokens_fail_and_priced_ones_pass():
+    items, rows, s, u, f = single_run()
+    reasoning = {"input": 400, "output": 30, "output_reasoning": 220, "total": 650}
+    items[1] = gen("g1", "t1", 0.0015, model_name="gpt-5.4-2026-03-05", mid=ONE, usage=reasoning,
+                   cost_details={"input": 0.001, "output": 0.00045, "total": 0.0015})
+    ok, detail = results(items, rows, s, u, f, model_defs=("azure-gpt-5.4",))[
+        "usage details captured (incl. cached tokens)"]
+    assert not ok and "220 reasoning tokens" in detail and "output_reasoning price" in detail
+    items[1] = gen("g1", "t1", 0.0015, model_name="gpt-5.4-2026-03-05", mid=ONE, usage=reasoning,
+                   cost_details={"input": 0.001, "output": 0.00045, "output_reasoning": 0.0033, "total": 0.0048})
+    ok, detail = results(items, rows, s, u, f, model_defs=("azure-gpt-5.4",))[
+        "usage details captured (incl. cached tokens)"]
+    assert ok and "220 reasoning token(s), priced" in detail
+
+
+def test_single_deployment_spike_served_from_cache_is_too_weak():
+    """If the padded prompt were cached (no cache-busting header), the one-model spike would not stand out."""
+    items, rows, s, u, f = single_run()
+    items[12] = gen("g6", "t6", 0.002, model_name="gpt-5.4-2026-03-05", mid=ONE)  # cached: ~2x a clean call
+    items[13] = gen("g6b", "t6", 0.002, model_name="gpt-5.4-2026-03-05", mid=ONE)
+    ok, detail = results(items, rows, s, u, f, model_defs=("azure-gpt-5.4",))["planted cost_spike caught"]
+    assert not ok and "not >= 5x" in detail and "uncached" in detail

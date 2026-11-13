@@ -11,6 +11,7 @@ class FailureConfig:
     wrong_handoff: bool = False      # prompt routes login issues to billing   -> caught by judges / CI gate
     slow_tool_seconds: float = 0.0   # lookup tools sleep                      -> caught by latency views / alerts
     cost_spike: bool = False         # expensive deployment + padded prompt    -> caught by cost tracking / alerts
+                                     # (one deployment only: a bigger, cache-busting padded prompt; see prompts.py)
     pii: bool = False                # traffic pastes card numbers             -> caught by guardrail flags / masking
 
     @classmethod

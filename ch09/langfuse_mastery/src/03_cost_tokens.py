@@ -9,9 +9,9 @@
 # | Concept | What it is | In our support agent |
 # |---|---|---|
 # | **Usage details** | token counts per type on a generation: `input`, `input_cache_read`, `output`, `total` | the CallbackHandler copies them from the Azure response |
-# | **Model definition** | `match_pattern` (regex on the generation's **reported** model name) + USD **per token** for each usage type | `azure-gpt-4.1-mini`, `azure-gpt-5.2-chat` |
+# | **Model definition** | `match_pattern` (regex on the generation's **reported** model name) + USD **per token** for each usage type | one per deployment: `azure-gpt-4.1-mini`, `azure-gpt-5.2-chat` (one deployment: just `azure-gpt-5.4`) |
 # | **Built-in vs custom** | Langfuse ships ~190 built-in definitions. A **custom** one wins over a built-in. | your Azure prices, not OpenAI list prices |
-# | **Unmatched model** | no definition matches → usage is kept but **cost is empty** (not 0, *missing*) | the expensive deployment, as the probe shows |
+# | **Unmatched model** | no definition matches → usage is kept but **cost is empty** (not 0, *missing*) | any deployment the probe shows unpriced |
 # | **Cost at ingestion** | cost is computed when the generation is ingested. A new definition does **not** reprice old traces. | define models **before** traffic |
 # | **Metrics API** | server-side aggregation (sum/avg/p95 of cost, tokens, latency), grouped and filtered | cost by version, by model; per session / user via filters |
 #
@@ -31,6 +31,13 @@
 # **The planted failure, `cost_spike`:** release **v2** of the agent "accidentally" ships the **expensive deployment** and
 # a **padded system prompt** (about 4,000 extra tokens per call). Nothing breaks and every answer is fine, so only cost tracking can catch it.
 #
+# **Running on one deployment** (`AZURE_OPENAI_DEPLOYMENT` = `EVAL_JUDGE_MODEL`, e.g. a single `gpt-5.4`): there is no
+# pricier model to switch to, and a padded prompt alone barely shows, because Azure **caches** a repeated prompt prefix
+# and bills cached tokens at a tenth. So v2 ships a bigger appendix (about 17,600 tokens) behind a `Request time: …`
+# line at the **top** of the system prompt. That line changes on every call, so nothing after it is ever cached: the
+# same lesson (only cost tracking sees it), with a real-world cause (a timestamp at the top of a prompt silently
+# disables prompt caching). The setup cell prints which variant you run.
+#
 # Docs: https://langfuse.com/docs/observability/features/token-and-cost-tracking ·
 # https://langfuse.com/docs/metrics/features/metrics-api ·
 # https://api.reference.langfuse.com/#tag/models
@@ -48,7 +55,7 @@ import subprocess
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from langfuse_lab import verify, traffic, kb
+from langfuse_lab import verify, traffic, kb, pricing
 from langfuse_lab.config import Settings
 from langfuse_lab.agent import SupportAgent, make_llm
 from langfuse_lab.failures import FailureConfig
@@ -63,8 +70,11 @@ RUN_STARTED = datetime.now(timezone.utc)
 ENV = "dev"
 fixtures = load_fixtures()
 CONVERSATIONS = traffic.cost_demo_conversations(run_id=RUN_ID, env=ENV)
+MODEL_TABLE = pricing.definitions(settings)  # TODO 2: one model definition per DISTINCT deployment
 print("run tag:", RUN_TAG, "| agent deployment:", settings.agent_deployment,
       "| expensive deployment:", settings.expensive_deployment)
+print("cost_spike variant:", "ONE deployment: bigger padded prompt behind a cache-busting timestamp"
+      if settings.single_model else "expensive deployment + padded prompt")
 for spec in CONVERSATIONS:
     print(f"  {spec.session_id:<40} {spec.user_id}  release={spec.release}  turns={len(spec.turns)}  {spec.failures or ''}")
 
@@ -72,7 +82,8 @@ for spec in CONVERSATIONS:
 # ## Given: the instrumentation you built in modules 01–02
 # This is a recap, not a TODO. Every turn is one `support-request` trace carrying session, user, tags and
 # **`version=spec.release`**. That version is what "cost per release" groups by. Conversations with the `cost_spike`
-# failure run on the planted agent: the expensive deployment plus the padded prompt.
+# failure run on the planted agent: the expensive deployment plus the padded prompt (one deployment: the bigger,
+# cache-busting padded prompt on the same model).
 
 # %%
 from langfuse import get_client, observe, propagate_attributes
@@ -103,7 +114,7 @@ def traced_turn(message, agent, spec, history=None):
 
 AGENTS = {
     (): SupportAgent(guardrail_fn=observed_guardrail, search_fn=observed_search),
-    ("cost_spike",): SupportAgent(failures=FailureConfig.from_names(["cost_spike"]),  # expensive model + padded prompt
+    ("cost_spike",): SupportAgent(failures=FailureConfig.from_names(["cost_spike"]),  # see "The planted failure"
                                   guardrail_fn=observed_guardrail, search_fn=observed_search),
 }
 
@@ -148,14 +159,15 @@ def generations(trace_id, *, wait=30):
 # %% [markdown]
 # ## Demo: what model name do the generations *report*?
 # A `match_pattern` is matched against the **model name on the generation**. That's not necessarily your Azure
-# deployment name. This cell makes one tiny call per deployment (2 Azure calls, tagged `…-probe` so verify
-# ignores them) and prints what Langfuse stored.
+# deployment name. This cell makes one tiny call per deployment (2 Azure calls, 1 with a single deployment; tagged
+# `…-probe` so verify ignores them) and prints what Langfuse stored.
 #
-# Read the output carefully. These names are what TODO 2 has to match:
-# - one deployment reports a **dated model id**, which a **built-in** definition already prices;
-# - the other reports a **name no built-in knows**: its usage is there, and its cost is **missing**.
+# Read the output carefully. These names are what TODO 2 has to match. A deployment reports either
+# - a **dated model id** (`gpt-4.1-mini-2025-04-14`), which a **built-in** definition may already price, or
+# - an **alias** (`gpt-5.2-chat` reports `gpt-chat-latest`) that no built-in knows: its usage is there, and its cost
+#   is **missing**.
 #
-# (If you re-run this module after TODO 2, both will show a cost: your definitions exist by then.)
+# (If you re-run this module after TODO 2, every probe shows a cost: your definitions exist by then.)
 
 # %%
 PROBE_TAG = f"{RUN_TAG}-probe"
@@ -168,9 +180,8 @@ def probe(llm, label):
         return langfuse.get_current_trace_id()
 
 
-DEPLOYMENTS = {"agent": settings.agent_deployment, "expensive": settings.expensive_deployment}
-probe_traces = {"agent": probe(make_llm(settings), "agent"),
-                "expensive": probe(make_llm(settings, expensive=True), "expensive")}
+DEPLOYMENTS = {row["label"]: row["deployment"] for row in MODEL_TABLE}  # one entry with a single deployment
+probe_traces = {label: probe(make_llm(settings, expensive=label == "expensive"), label) for label in DEPLOYMENTS}
 langfuse.flush()
 
 
@@ -217,17 +228,22 @@ print(result.stdout[-2500:] or result.stderr[-2500:])
 cost = importlib.reload(cost)
 
 # %% [markdown]
-# ## TODO 2: model definitions for both Azure deployments
+# ## TODO 2: model definitions for your Azure deployments
 #
-# Write `ensure_model_definitions() -> dict[str, Model]`. It should get-or-create these two **custom** definitions,
-# by `model_name`:
+# Write `ensure_model_definitions() -> dict[str, Model]`. It should get-or-create one **custom** definition per row
+# of `MODEL_TABLE` (printed below: `label`, `deployment`, `model_name`, `prices_per_m`), by `model_name`. With this
+# course's two deployments that is:
 #
 # | model_name | `match_pattern` must match | USD per **1M** tokens: input / cached input / output |
 # |---|---|---|
 # | `azure-gpt-4.1-mini` | `REPORTED["agent"]` **and** the bare deployment name `gpt-4.1-mini` | 0.40 / 0.10 / 1.60 |
-# | `azure-gpt-5.2-chat` | `REPORTED["expensive"]` **and** the deployment name `gpt-5.2-chat` | 1.75 / 0.175 / 14.00 |
+# | `azure-gpt-5.2-chat` | `REPORTED["expensive"]` **and** the deployment name `gpt-5.2-chat` | 1.75 / 0.175 / 14.00 (reasoning 14.00) |
 #
-# (These are list prices at the time of writing. In production, use the prices from your Azure agreement.)
+# With **one deployment** for everything (e.g. `gpt-5.4` as agent and judge), `MODEL_TABLE` has a single row,
+# `azure-gpt-5.4`, whose pattern must match `REPORTED["agent"]` and `gpt-5.4`.
+#
+# (These are list prices at the time of writing, from `langfuse_lab/pricing.py`. In production, use the prices from
+# your Azure agreement. A deployment that isn't in that table raises a `KeyError`: add its prices there.)
 #
 # Why also the deployment names? A **failed** call has no response, so the generation records the *requested* model
 # (the deployment name) instead. Match both, and every call your app makes is priced.
@@ -235,8 +251,10 @@ cost = importlib.reload(cost)
 # Requirements:
 # - `unit="TOKENS"` and a single default pricing tier:
 #   `pricing_tiers=[{"name": "Standard", "isDefault": True, "priority": 0, "conditions": [], "prices": {...}}]`.
-#   The price keys are the **usage types**: `input`, `input_cache_read`, `output`. Convert with `cost.per_token`.
-#   Leave out `input_cache_read`, and cached tokens cost **0**.
+#   The price keys are the **usage types** in the row's `prices_per_m`: `input`, `input_cache_read`, `output`, and for
+#   GPT-5 models `output_reasoning`. Convert with `cost.per_token`. Leave out `input_cache_read`, and cached tokens
+#   cost **0**. The same goes for `output_reasoning`: GPT-5 bills reasoning tokens as output, but Langfuse records
+#   them as their own usage type, so without a price they are free in your numbers.
 # - **Anchor and escape** the regex: `(?i)^(gpt-4\.1-mini|...)$`. An unanchored `gpt-4.1-mini` would also match
 #   `gpt-4.1-mini-realtime`.
 # - **Get-or-create:** names are not unique (like score configs in module 06), so list first and create only what's
@@ -252,15 +270,20 @@ cost = importlib.reload(cost)
 # reported names.
 
 # %%
+for row in MODEL_TABLE:
+    print(f"{row['label']:<9} deployment={row['deployment']:<14} reported={REPORTED[row['label']]!r:<28} "
+          f"-> {row['model_name']}  USD per 1M tokens: {row['prices_per_m']}")
+
+# %%
 # TODO 2: your code here
 
 # %%
 first, second = ensure_model_definitions(), ensure_model_definitions()
 assert {k: m.id for k, m in first.items()} == {k: m.id for k, m in second.items()}, "second call created new definitions"
 MODELS = second
-for label, name in {"agent": "azure-gpt-4.1-mini", "expensive": "azure-gpt-5.2-chat"}.items():
-    m = MODELS[name]
-    for reported in (REPORTED[label], DEPLOYMENTS[label]):
+for row in MODEL_TABLE:
+    name, m = row["model_name"], MODELS[row["model_name"]]
+    for reported in (REPORTED[row["label"]], row["deployment"]):
         assert re.search(m.match_pattern, reported), f"{name}: {m.match_pattern!r} does not match {reported!r}"
     print(f"{name:<20} {m.match_pattern:<45} {({k: p.price for k, p in m.prices.items()})}  {m.id}")
 
@@ -270,7 +293,8 @@ for label, name in {"agent": "azure-gpt-4.1-mini", "expensive": "azure-gpt-5.2-c
 # after TODO 2: cost is not computed retroactively.)
 #
 # There are 4 conversations and 7 turns, about 21 Azure calls. The `s_login_then_2fa` conversation runs as **release
-# v2**, on the expensive deployment with the padded prompt.
+# v2**, on the expensive deployment with the padded prompt (one deployment: the same model, with the bigger padded
+# prompt behind the per-call timestamp).
 
 # %%
 TRACES = {}  # session_id -> [trace ids]
@@ -286,12 +310,15 @@ wait_for_ingestion([t for ids in TRACES.values() for t in ids])
 # tokens are cached, and the padded prompt is about 4,400). Your `cost.cost_from_usage` with **your** prices should
 # reproduce the number Langfuse stored. On a cached call, `input` holds only the **uncached** part, and
 # `input_cache_read` is billed at a tenth of the input price.
+#
+# With one deployment, no v2 call hits the cache: the timestamp on the first line makes every prompt new, so all
+# ~17,600 padded tokens are billed as `input`. That is the whole spike.
 
 # %%
 spike_session = next(s.session_id for s in CONVERSATIONS if s.failures)
 spike_gens = [g for t in TRACES[spike_session] for g in generations(t)]
 g = max(spike_gens, key=lambda o: ((o.usage_details or {}).get("input_cache_read") or 0, o.total_cost or 0))
-prices = {k: p.price for k, p in MODELS["azure-gpt-5.2-chat"].prices.items()}
+prices = {k: p.price for k, p in MODELS[pricing.definition_name(settings.expensive_deployment)].prices.items()}
 mine = cost.cost_from_usage(g.usage_details, prices)
 print("model       ", g.model, "->", g.internal_model_id)
 print("usage       ", g.usage_details)
@@ -346,11 +373,17 @@ print("per user:   ", {k: round(v, 5) for k, v in USER_COSTS.items()})
 # Flag a session if it is **over budget** (`cost.over_budget(session_costs, budget)`) **or** a **spike** relative to its
 # peers (`cost.cost_spikes(session_costs)`). Return the flagged ids, deduplicated and most expensive first.
 #
-# Expected: release `v2` costs many times `v1` despite fewer turns, the expensive model dominates the model table,
-# and exactly one session is flagged: the v2 login conversation.
+# Expected: release `v2` costs many times `v1` despite fewer turns, the expensive model dominates the model table
+# (one deployment: the table has one row; the spike shows up per release and per session), and exactly one session
+# is flagged: the v2 login conversation.
+#
+# The budget is 0.01 USD for a `gpt-4.1-mini` agent. `pricing.scaled_budget` scales it to what a typical call costs on
+# YOUR agent deployment (0.071 on `gpt-5.4`): a budget written for a cheap model would flag every clean conversation
+# of a 7x pricier one.
 
 # %%
-SESSION_BUDGET = 0.01  # USD per conversation: what finance signed off on
+SESSION_BUDGET = pricing.scaled_budget(0.01, settings.agent_deployment)  # USD per conversation: what finance signed off on
+print("session budget: $", SESSION_BUDGET)
 
 # TODO 4: your code here
 
@@ -360,23 +393,23 @@ print("flagged:", FLAGGED)
 
 # %% [markdown]
 # Verify waits for all 7 traces, then checks:
-# - your 2 definitions exist exactly once, priced per token, cached input included,
+# - your definitions (one per row of `MODEL_TABLE`) exist exactly once, priced per token, cached input included,
 # - **every** generation of the run was priced by *your* definitions (not unmatched, not a built-in),
-# - usage was captured, and any cached tokens were priced,
+# - usage was captured, and any cached (and GPT-5 reasoning) tokens were priced,
 # - your per-session and per-user numbers match what Langfuse stored (within 1%),
 # - the planted `cost_spike` traces cost at least 5× the clean median, and your report flagged exactly that session.
 
 # %%
 verify.check_module_03(RUN_TAG, session_costs=SESSION_COSTS, user_costs=USER_COSTS, flagged_sessions=FLAGGED,
-                       expected_traces=7)
+                       expected_traces=7, model_defs=[row["model_name"] for row in MODEL_TABLE])
 
 # %% [markdown]
 # ## Demo: cost is not retroactive
-# The probe calls ran **before** your definitions existed. Read them again: the expensive probe generation is still
-# unpriced, and the agent probe still carries the *built-in* price, even though your definitions now match both.
-# Langfuse prices a generation once, when it's ingested.
+# The probe calls ran **before** your definitions existed. Read them again: a probe that was unpriced is still
+# unpriced, and one a *built-in* priced still carries the built-in's price, even though your definitions now match
+# them. Langfuse prices a generation once, when it's ingested.
 #
-# (On a re-run of this module, your definitions already existed when the probes ran, so both probes are priced.)
+# (On a re-run of this module, your definitions already existed when the probes ran, so every probe is priced by yours.)
 
 # %%
 for label, trace_id in probe_traces.items():
@@ -389,14 +422,16 @@ for label, trace_id in probe_traces.items():
 
 # %% [markdown]
 # ## UI tour
-# - [ ] **Settings → Models**: your two definitions sit above the built-ins. Open one to see its match pattern and prices.
+# - [ ] **Settings → Models**: your definitions sit above the built-ins. Open one to see its match pattern and prices.
 #   Use the built-in **test** box to try a model name against the pattern.
 # - [ ] Open a v2 trace and click a **generation**: usage (input / cached / output), cost breakdown, and the matched model.
 # - [ ] **Traces** table: add the **Cost** and **Tokens** columns, filter on tag `cost_spike`, and sort by cost.
 # - [ ] **Sessions** and **Users** tables: total cost per conversation and per customer.
 # - [ ] **Dashboards → Langfuse default (cost)**: cost by model over time. The spike is one bar.
-# - [ ] Find the probe trace of the expensive deployment: a generation with tokens and **no cost**. That's what an
-#   unmatched model looks like in production.
+# - [ ] Find a probe trace whose generation has tokens and **no cost** (the probe cell said which, if any). That's
+#   what an unmatched model looks like in production.
+# - [ ] (One deployment) Open a v2 generation: its input starts with `Request time: …`, and `input_cache_read` is 0 on
+#   every v2 call.
 #
 # ## Production notes
 # - **Match what the generation reports, not what you deployed.** Azure returns a dated id (`gpt-4.1-mini-2025-04-14`)
@@ -408,6 +443,8 @@ for label, trace_id in probe_traces.items():
 #   at ingestion, and old traces are **not** repriced. If you need invoice-exact numbers, ingest the cost yourself
 #   (`cost_details` on the generation); ingested cost wins over inferred cost.
 # - **Price every usage type you're billed for:** cached input, reasoning tokens, audio. A missing price is silently 0.
+# - **Keep what changes per call at the END of a prompt.** Prompt caching matches identical leading tokens: a
+#   timestamp, request id or user name on the first line makes every call a cache miss, at ten times the price.
 #   Pricing **tiers** (`conditions` on usage thresholds) model long-context surcharges.
 # - **Provisioned throughput (PTU)** has no per-token price. Model it as an allocation (cost per token = monthly
 #   commitment / tokens used) or track tokens only.

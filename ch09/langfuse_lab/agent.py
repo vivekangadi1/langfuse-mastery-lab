@@ -14,9 +14,10 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 
-from .config import Settings, azure_endpoint_root, takes_temperature
+from .config import GPT5_RENAMED_PARAMS, Settings, azure_endpoint_root, takes_temperature
 from .failures import FailureConfig
 from .guardrail import GuardrailResult, check_input
+from .prompts import request_time_header
 from .prompts import system_prompt as _default_prompt
 from .tools import ToolContext, make_tools
 
@@ -49,7 +50,7 @@ def make_llm(settings: Settings, *, expensive: bool = False) -> BaseChatModel:
     )
 
 
-RENAME_FOR_GPT5 = {"max_tokens": "max_completion_tokens"}  # GPT-5 / o-series: 'max_tokens' is a 400 (verified live)
+RENAME_FOR_GPT5 = GPT5_RENAMED_PARAMS  # GPT-5 / o-series: 'max_tokens' is a 400 (verified live)
 
 
 def turn_params(params: dict | None, drop: frozenset = frozenset(), rename: dict | None = None) -> dict | None:
@@ -142,10 +143,15 @@ class SupportAgent:
     def __init__(self, settings: Settings | None = None, *, failures: FailureConfig | None = None,
                  llm: BaseChatModel | None = None, guardrail_fn=check_input, search_fn=None,
                  system_prompt: str | None = None):
-        """`system_prompt` replaces the built-in prompt (`prompts.system_prompt(failures)`) for every turn."""
+        """`system_prompt` replaces the built-in prompt (`prompts.system_prompt(failures)`) for every turn.
+
+        cost_spike switches to the expensive deployment. When that IS the agent deployment (`settings.single_model`),
+        it ships the single-model spike instead: a bigger appendix behind a per-call `request_time_header`, which
+        defeats Azure's prompt cache (`cache_busting`; see prompts.SINGLE_MODEL_SPIKE_PADDING)."""
         self.failures = failures or FailureConfig()
         self.drop_params: frozenset = frozenset()
         self.rename_params: dict = {}
+        self.cache_busting = False
         if llm is None:
             settings = settings or Settings.from_env()
             expensive = self.failures.cost_spike
@@ -154,13 +160,19 @@ class SupportAgent:
             if expensive or not takes_temperature(deployment):
                 self.drop_params = frozenset({"temperature"})  # make_llm sent none; a prompt config must not either
                 self.rename_params = dict(RENAME_FOR_GPT5)
+            self.cache_busting = expensive and settings.single_model
         self.ctx = ToolContext(failures=self.failures, search_fn=search_fn)
-        self.system_prompt = system_prompt if system_prompt is not None else _default_prompt(self.failures)
+        self.system_prompt = (system_prompt if system_prompt is not None
+                              else _default_prompt(self.failures, single_model=self.cache_busting))
         self._turn_prompt: str | None = None
         self._turn_params: dict | None = None
-        self.graph = build_graph(llm, make_tools(self.ctx), prompt=lambda: self._turn_prompt or self.system_prompt,
+        self.graph = build_graph(llm, make_tools(self.ctx), prompt=lambda: self._turn_prompt or self._agent_prompt(),
                                  guardrail_fn=guardrail_fn, llm_params=lambda: self._turn_params,
                                  drop_params=self.drop_params, rename_params=self.rename_params)
+
+    def _agent_prompt(self) -> str:
+        """The agent's own system prompt for one LLM call (read on every agent step)."""
+        return request_time_header() + self.system_prompt if self.cache_busting else self.system_prompt
 
     def invoke(self, user_message: str, *, history: list | None = None, config: dict | None = None,
                system_prompt: str | None = None, llm_params: dict | None = None) -> AgentRun:

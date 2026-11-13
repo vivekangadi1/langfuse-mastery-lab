@@ -160,3 +160,44 @@ def test_partial_run_is_not_yet():
     items = [o for o in run() if o.trace_id != "t6"]
     r = results(items=items)
     assert all(v[0] == "retry" for v in r.values()), r
+
+
+# ---------------------------------------------------------------- a GPT-5-family agent deployment (e.g. gpt-5.4)
+# The agent never sends temperature to it and sends max_tokens as max_completion_tokens (config.sent_params); the
+# CallbackHandler records exactly that in modelParameters.
+GPT5_SENT = {"max_completion_tokens": 400}
+
+
+def gpt5_run(params=GPT5_SENT):
+    items = run()
+    return [gen(o.id, o.trace_id, o.prompt_version, params=dict(params)) if o.type == "GENERATION" else o
+            for o in items]
+
+
+def test_gpt5_agent_config_applied_as_sent(monkeypatch):
+    monkeypatch.delenv("LLM_TEMPERATURE", raising=False)
+    ok, detail = results(items=gpt5_run(), agent_deployment="gpt-5.4")["prompt config applied to the LLM calls"]
+    assert ok and "max_completion_tokens" in detail and "gpt-5.4" in detail
+
+
+def test_gpt5_agent_without_the_config_still_fails(monkeypatch):
+    monkeypatch.delenv("LLM_TEMPERATURE", raising=False)
+    ok, detail = results(items=gpt5_run({}), agent_deployment="gpt-5.4")["prompt config applied to the LLM calls"]
+    assert not ok and "max_completion_tokens" in detail and "llm_params" in detail
+
+
+def test_two_deployment_agent_is_compared_as_stored(monkeypatch):
+    """gpt-4.1-mini takes temperature: GPT-5-style parameters are NOT the version's config there."""
+    monkeypatch.delenv("LLM_TEMPERATURE", raising=False)
+    r = results(items=gpt5_run(), agent_deployment="gpt-4.1-mini")
+    assert r["prompt config applied to the LLM calls"][0] is False
+    assert results(items=gpt5_run())["prompt config applied to the LLM calls"][0] is False  # no deployment given
+    assert results(agent_deployment="gpt-4.1-mini")["prompt config applied to the LLM calls"][0] is True
+
+
+def test_check_module_04_passes_agent_deployment_through(capsys, monkeypatch):
+    monkeypatch.delenv("LLM_TEMPERATURE", raising=False)
+    client = NS(api=NS(observations=FakeObservations(gpt5_run()), prompts=FakePrompts(prompt_rows())),
+                flush=lambda: None)
+    assert check_module_04("run:x", client=client, retries=1, agent_deployment="gpt-5.4") is True
+    assert "MODULE PASSED" in capsys.readouterr().out

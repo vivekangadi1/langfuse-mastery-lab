@@ -29,6 +29,19 @@ def takes_temperature(deployment: str) -> bool:
     return not (deployment or "").lower().startswith(_DEFAULT_TEMPERATURE_ONLY)
 
 
+GPT5_RENAMED_PARAMS = {"max_tokens": "max_completion_tokens"}  # GPT-5 / o-series: 'max_tokens' is a 400 (verified live)
+
+
+def sent_params(params: dict | None, deployment: str) -> dict:
+    """The model kwargs the lab's agent really sends to `deployment` for `params` (e.g. a prompt config
+    {"temperature": 0, "max_tokens": 400}): unchanged for a deployment that takes temperature; for a GPT-5 / o-series
+    deployment, temperature dropped and max_tokens renamed max_completion_tokens (both are 400s otherwise). This is
+    what the generation's modelParameters show, so verify compares against it."""
+    if takes_temperature(deployment):
+        return dict(params or {})
+    return {GPT5_RENAMED_PARAMS.get(k, k): v for k, v in (params or {}).items() if k != "temperature"}
+
+
 def azure_endpoint_root(url: str) -> str:
     """AzureChatOpenAI wants the resource root; .env endpoints sometimes include /openai/... paths."""
     parts = urlsplit(url)
@@ -43,6 +56,12 @@ class Settings:
     agent_deployment: str
     expensive_deployment: str
     langfuse_base_url: str
+
+    @property
+    def single_model(self) -> bool:
+        """One deployment for everything (agent == judge/expensive, e.g. one gpt-5.4): lessons that compare a cheap
+        and an expensive model switch to their single-model variant."""
+        return self.agent_deployment == self.expensive_deployment
 
     @classmethod
     def from_env(cls, load: bool = True) -> "Settings":
