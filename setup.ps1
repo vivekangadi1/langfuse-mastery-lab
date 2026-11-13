@@ -16,10 +16,10 @@ if (-not (Test-Path $py)) {
 
 Write-Host "Installing packages..."
 if ($hasUv) {
-    uv pip install --python $py -r requirements-langfuse.txt
+    uv pip install --python $py -r ch09/langfuse_lab/requirements.txt
 } else {
     & $py -m pip install --upgrade pip
-    & $py -m pip install -r requirements-langfuse.txt
+    & $py -m pip install -r ch09/langfuse_lab/requirements.txt
 }
 
 Write-Host "Registering the Jupyter kernel 'Python (ch09 Langfuse v5)'..."

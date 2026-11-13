@@ -19,7 +19,7 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
 `setup.ps1` does three things:
-- creates `ch09/.venv-langfuse` with the pinned packages (`requirements-langfuse.txt`);
+- creates `ch09/.venv-langfuse` with the exact pinned packages the course was validated with (`ch09/langfuse_lab/requirements.txt`, including the kernel-transport pins that keep VS Code from hanging on "Connecting to kernel");
 - registers the Jupyter kernel **Python (ch09 Langfuse v5)**;
 - writes `.env` with freshly generated Langfuse secrets (`make_env.py`).
 
