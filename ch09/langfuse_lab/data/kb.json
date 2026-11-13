@@ -1,0 +1,14 @@
+[
+ {"id": "kb_refunds", "title": "Refund policy", "body": "Refunds for double charge or duplicate charge errors are reviewed by billing within 1 business day. Approved refunds return to the original card in 5-7 days."},
+ {"id": "kb_returns", "title": "Returns", "body": "Items can be returned within 30 days of delivery. Start a return from your orders page; the refund is issued after the item arrives."},
+ {"id": "kb_shipping_times", "title": "Shipping times", "body": "Standard shipping takes 3-6 business days. Express takes 1-2 days. Delayed shipments are investigated by the shipping team after 7 days."},
+ {"id": "kb_tracking", "title": "Tracking an order", "body": "Every shipped order has a carrier and tracking status. Status in_transit means the carrier has the package; delayed means the ETA slipped."},
+ {"id": "kb_password", "title": "Password reset", "body": "If you cannot log in, request a password reset link. Account access issues the reset cannot fix are handled by the account team."},
+ {"id": "kb_2fa", "title": "Two-factor authentication", "body": "Two-factor codes expire after 5 minutes. Lost devices require identity verification by the account team."},
+ {"id": "kb_cancel", "title": "Cancel a subscription", "body": "Subscriptions can be cancelled anytime. Cancellation takes effect at the end of the billing period; no partial refunds."},
+ {"id": "kb_plans", "title": "Plans", "body": "Basic and Pro plans differ in support hours and storage. Upgrades are prorated; downgrades apply next billing period."},
+ {"id": "kb_invoices", "title": "Invoices", "body": "Monthly invoices are emailed on the 1st. Billing can resend an invoice or correct invoice details on request."},
+ {"id": "kb_payment_methods", "title": "Payment methods", "body": "We accept cards and bank transfer. Never share full card numbers in chat; support will never ask for them."},
+ {"id": "kb_damaged", "title": "Damaged items", "body": "Report damaged items within 7 days with a photo. A replacement or refund is issued after review."},
+ {"id": "kb_contact", "title": "Contacting support", "body": "Support is available 24/7 in chat. Specialists for billing, account, and shipping handle escalated cases."}
+]

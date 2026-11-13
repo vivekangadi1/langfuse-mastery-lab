@@ -1,0 +1,61 @@
+# Module 10: the release gate as a GitHub Actions workflow.
+# NOT active: GitHub only runs workflows under .github/workflows/. Copy it there once your Langfuse is reachable from
+# GitHub's runners (a hosted/self-hosted URL, not localhost) and the secrets below exist (Settings -> Secrets -> Actions).
+name: langfuse-release-gate
+
+on:
+  pull_request:
+    paths:
+      - "ch09/langfuse_lab/**"
+      - "ch09/langfuse_mastery/ci/**"
+  workflow_dispatch:
+    inputs:
+      candidate_label:
+        description: "prompt label to gate (e.g. staging, candidate)"
+        required: true
+        default: "staging"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+      LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+      LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
+      AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+      AZURE_OPENAI_API_VERSION: ${{ vars.AZURE_OPENAI_API_VERSION }}
+      AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
+      CANDIDATE_LABEL: ${{ inputs.candidate_label || 'candidate' }}
+      GATE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      GATE_DATASET_VERSION: ${{ vars.GATE_DATASET_VERSION }}
+      GATE_ARTIFACTS: ${{ github.workspace }}/gate-artifacts
+    defaults:
+      run:
+        working-directory: ch09
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: ch09/langfuse_lab/requirements.txt
+      - run: pip install -r langfuse_lab/requirements.txt
+      - name: release gate
+        run: python -m pytest langfuse_mastery/ci -q -p no:cacheprovider --junitxml="$GATE_ARTIFACTS/pytest.xml"
+      - name: job summary
+        if: always()
+        run: cat "$GATE_ARTIFACTS/gate-summary.md" >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-gate-report
+          path: gate-artifacts/

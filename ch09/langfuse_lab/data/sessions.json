@@ -1,0 +1,8 @@
+[
+ {"session_id": "s_refund_followup", "customer_id": "cust_00", "turns": ["I was charged twice for order 8129.", "How long until I see the refund?"]},
+ {"session_id": "s_shipping_then_policy", "customer_id": "cust_01", "turns": ["Where is order 9912?", "If it is late can I return it?"]},
+ {"session_id": "s_login_then_2fa", "customer_id": "cust_02", "turns": ["I can't log in to cust_02.", "I also lost my phone for two-factor codes."]},
+ {"session_id": "s_cancel_then_plan", "customer_id": "cust_03", "turns": ["Please cancel subscription sub_03.", "Actually, would a downgrade to basic be cheaper?"]},
+ {"session_id": "s_invoice", "customer_id": "cust_04", "turns": ["Can you resend my March invoice?", "And fix the company name on it?"]},
+ {"session_id": "s_damaged", "customer_id": "cust_05", "turns": ["My item from order 8115 arrived broken.", "I have a photo, what next?"]}
+]

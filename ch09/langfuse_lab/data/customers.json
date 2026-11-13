@@ -1,0 +1,72 @@
+[
+ {
+  "customer_id": "cust_00",
+  "name": "Asha",
+  "email": "asha@example.com",
+  "plan": "pro",
+  "subscription_id": "sub_00"
+ },
+ {
+  "customer_id": "cust_01",
+  "name": "Ben",
+  "email": "ben@example.com",
+  "plan": "basic",
+  "subscription_id": "sub_01"
+ },
+ {
+  "customer_id": "cust_02",
+  "name": "Chen",
+  "email": "chen@example.com",
+  "plan": "pro",
+  "subscription_id": "sub_02"
+ },
+ {
+  "customer_id": "cust_03",
+  "name": "Dana",
+  "email": "dana@example.com",
+  "plan": "basic",
+  "subscription_id": "sub_03"
+ },
+ {
+  "customer_id": "cust_04",
+  "name": "Eli",
+  "email": "eli@example.com",
+  "plan": "basic",
+  "subscription_id": "sub_04"
+ },
+ {
+  "customer_id": "cust_05",
+  "name": "Farah",
+  "email": "farah@example.com",
+  "plan": "basic",
+  "subscription_id": "sub_05"
+ },
+ {
+  "customer_id": "cust_06",
+  "name": "Gus",
+  "email": "gus@example.com",
+  "plan": "pro",
+  "subscription_id": "sub_06"
+ },
+ {
+  "customer_id": "cust_07",
+  "name": "Hana",
+  "email": "hana@example.com",
+  "plan": "basic",
+  "subscription_id": "sub_07"
+ },
+ {
+  "customer_id": "cust_08",
+  "name": "Ivan",
+  "email": "ivan@example.com",
+  "plan": "basic",
+  "subscription_id": "sub_08"
+ },
+ {
+  "customer_id": "cust_09",
+  "name": "Jo",
+  "email": "jo@example.com",
+  "plan": "basic",
+  "subscription_id": "sub_09"
+ }
+]

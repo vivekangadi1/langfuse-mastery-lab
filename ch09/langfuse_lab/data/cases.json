@@ -1,0 +1,515 @@
+[
+ {
+  "case_id": "refund_double_charge",
+  "workflow": "billing",
+  "agent_type": "triage_agent",
+  "customer_request": "I was charged twice for order 8129. Please fix it.",
+  "required_step": "lookup_order",
+  "expected_handoff": "billing_specialist",
+  "reference_answer": "I found the duplicate charge and handed this to billing for refund review.",
+  "max_retries": 2,
+  "simulated_retry_count": 1,
+  "simulated_handoff_target": "billing_specialist",
+  "simulated_steps_completed": [
+   "lookup_order",
+   "verify_duplicate_charge",
+   "handoff_to_billing_specialist",
+   "respond_to_customer"
+  ],
+  "simulated_tool_calls": [
+   {
+    "name": "lookup_order",
+    "status": "success",
+    "input": {
+     "order_id": "8129"
+    },
+    "output": {
+     "status": "success"
+    },
+    "description": "Support tool in billing workflow."
+   },
+   {
+    "name": "create_handoff",
+    "status": "success",
+    "input": {
+     "target": "billing_specialist"
+    },
+    "output": {
+     "status": "success"
+    },
+    "description": "Support tool in billing workflow."
+   }
+  ],
+  "simulated_final_answer": "I confirmed the duplicate charge for order 8129 and escalated this to billing for refund processing. You will receive an update within one business day.",
+  "task_definition": "Resolve this billing support request with the required steps, correct handoff (billing_specialist), and a clear final answer.",
+  "expected_plan": [
+   "lookup_order",
+   "handoff_to_billing_specialist",
+   "respond_to_customer"
+  ],
+  "expected_tools": [
+   {
+    "name": "lookup_order",
+    "description": "Core billing lookup step.",
+    "input": {
+     "case_id": "refund_double_charge",
+     "workflow": "billing"
+    },
+    "output": {}
+   },
+   {
+    "name": "create_handoff",
+    "description": "Escalation handoff tool.",
+    "input": {
+     "target": "billing_specialist",
+     "reason": "billing"
+    },
+    "output": {}
+   }
+  ],
+  "scenario_group_id": "billing::billing_issue::billing_specialist"
+ },
+ {
+  "case_id": "shipping_status_no_handoff_needed",
+  "workflow": "shipping",
+  "agent_type": "triage_agent",
+  "customer_request": "Where is my order 9912 and when should it arrive?",
+  "required_step": "lookup_shipment",
+  "expected_handoff": "none",
+  "reference_answer": "Order 9912 is in transit and should arrive tomorrow.",
+  "max_retries": 1,
+  "simulated_retry_count": 0,
+  "simulated_handoff_target": "none",
+  "simulated_steps_completed": [
+   "lookup_shipment",
+   "respond_to_customer"
+  ],
+  "simulated_tool_calls": [
+   {
+    "name": "lookup_shipment",
+    "status": "success",
+    "input": {
+     "order_id": "9912"
+    },
+    "output": {
+     "status": "success"
+    },
+    "description": "Support tool in shipping workflow."
+   }
+  ],
+  "simulated_final_answer": "I checked order 9912 and it is in transit. Carrier ETA is tomorrow.",
+  "task_definition": "Resolve this shipping support request with the required steps, correct handoff (none), and a clear final answer.",
+  "expected_plan": [
+   "lookup_shipment",
+   "respond_to_customer"
+  ],
+  "expected_tools": [
+   {
+    "name": "lookup_shipment",
+    "description": "Core shipping lookup step.",
+    "input": {
+     "case_id": "shipping_status_no_handoff_needed",
+     "workflow": "shipping"
+    },
+    "output": {}
+   }
+  ],
+  "scenario_group_id": "shipping::shipping_issue::none"
+ },
+ {
+  "case_id": "reset_password_wrong_handoff",
+  "workflow": "account_access",
+  "agent_type": "triage_agent",
+  "customer_request": "I cannot log in after changing my password.",
+  "required_step": "lookup_account_status",
+  "expected_handoff": "account_security",
+  "reference_answer": "I checked your account and routed this to account security to restore access.",
+  "max_retries": 1,
+  "simulated_retry_count": 0,
+  "simulated_handoff_target": "billing_specialist",
+  "simulated_steps_completed": [
+   "lookup_account_status",
+   "handoff_to_billing_specialist",
+   "respond_to_customer"
+  ],
+  "simulated_tool_calls": [
+   {
+    "name": "lookup_account_status",
+    "status": "success",
+    "input": {
+     "user_id": "user_42"
+    },
+    "output": {
+     "status": "success"
+    },
+    "description": "Support tool in account_access workflow."
+   },
+   {
+    "name": "create_handoff",
+    "status": "success",
+    "input": {
+     "target": "billing_specialist"
+    },
+    "output": {
+     "status": "success"
+    },
+    "description": "Support tool in account_access workflow."
+   }
+  ],
+  "simulated_final_answer": "I escalated this and someone will follow up.",
+  "task_definition": "Resolve this account_access support request with the required steps, correct handoff (account_security), and a clear final answer.",
+  "expected_plan": [
+   "lookup_account_status",
+   "handoff_to_account_security",
+   "respond_to_customer"
+  ],
+  "expected_tools": [
+   {
+    "name": "lookup_account_status",
+    "description": "Core account_access lookup step.",
+    "input": {
+     "case_id": "reset_password_wrong_handoff",
+     "workflow": "account_access"
+    },
+    "output": {}
+   },
+   {
+    "name": "create_handoff",
+    "description": "Escalation handoff tool.",
+    "input": {
+     "target": "account_security",
+     "reason": "account_access"
+    },
+    "output": {}
+   }
+  ],
+  "scenario_group_id": "account_access::account_access_issue::account_security"
+ },
+ {
+  "case_id": "cancel_subscription_missing_step",
+  "workflow": "billing",
+  "agent_type": "triage_agent",
+  "customer_request": "Please cancel my subscription at the end of this billing cycle.",
+  "required_step": "lookup_subscription",
+  "expected_handoff": "none",
+  "reference_answer": "I located your subscription and set it to cancel at cycle end.",
+  "max_retries": 1,
+  "simulated_retry_count": 0,
+  "simulated_handoff_target": "none",
+  "simulated_steps_completed": [
+   "respond_to_customer"
+  ],
+  "simulated_tool_calls": [
+   {
+    "name": "lookup_subscription",
+    "status": "failed",
+    "input": {
+     "subscription_id": "sub_01"
+    },
+    "output": {
+     "status": "failed"
+    },
+    "description": "Support tool in billing workflow."
+   }
+  ],
+  "simulated_final_answer": "Your subscription is all set and should stop soon.",
+  "task_definition": "Resolve this billing support request with the required steps, correct handoff (none), and a clear final answer.",
+  "expected_plan": [
+   "lookup_subscription",
+   "respond_to_customer"
+  ],
+  "expected_tools": [
+   {
+    "name": "lookup_subscription",
+    "description": "Core billing lookup step.",
+    "input": {
+     "case_id": "cancel_subscription_missing_step",
+     "workflow": "billing"
+    },
+    "output": {}
+   }
+  ],
+  "scenario_group_id": "billing::billing_issue::none"
+ },
+ {
+  "case_id": "invoice_request_retry_exceeded",
+  "workflow": "billing",
+  "agent_type": "billing_agent",
+  "customer_request": "Can you send me the invoice for March?",
+  "required_step": "lookup_invoice",
+  "expected_handoff": "none",
+  "reference_answer": "I found your March invoice and sent it to your email.",
+  "max_retries": 1,
+  "simulated_retry_count": 3,
+  "simulated_handoff_target": "none",
+  "simulated_steps_completed": [
+   "lookup_invoice",
+   "lookup_invoice",
+   "lookup_invoice",
+   "respond_to_customer"
+  ],
+  "simulated_tool_calls": [
+   {
+    "name": "lookup_invoice",
+    "status": "failed",
+    "input": {
+     "month": "March"
+    },
+    "output": {
+     "status": "failed"
+    },
+    "description": "Support tool in billing workflow."
+   },
+   {
+    "name": "lookup_invoice",
+    "status": "failed",
+    "input": {
+     "month": "March"
+    },
+    "output": {
+     "status": "failed"
+    },
+    "description": "Support tool in billing workflow."
+   },
+   {
+    "name": "lookup_invoice",
+    "status": "success",
+    "input": {
+     "month": "March"
+    },
+    "output": {
+     "status": "success"
+    },
+    "description": "Support tool in billing workflow."
+   }
+  ],
+  "simulated_final_answer": "I finally found the invoice after several retries and sent it.",
+  "task_definition": "Resolve this billing support request with the required steps, correct handoff (none), and a clear final answer.",
+  "expected_plan": [
+   "lookup_invoice",
+   "respond_to_customer"
+  ],
+  "expected_tools": [
+   {
+    "name": "lookup_invoice",
+    "description": "Core billing lookup step.",
+    "input": {
+     "case_id": "invoice_request_retry_exceeded",
+     "workflow": "billing"
+    },
+    "output": {}
+   }
+  ],
+  "scenario_group_id": "billing::billing_issue::none"
+ },
+ {
+  "case_id": "refund_double_charge_variant_1",
+  "workflow": "billing",
+  "agent_type": "triage_agent",
+  "customer_request": "I was charged twice for order 8129. Please fix it.",
+  "required_step": "lookup_order",
+  "expected_handoff": "billing_specialist",
+  "reference_answer": "I found the duplicate charge and handed this to billing for refund review.",
+  "max_retries": 2,
+  "simulated_retry_count": 1,
+  "simulated_handoff_target": "billing_specialist",
+  "simulated_steps_completed": [
+   "lookup_order",
+   "verify_duplicate_charge",
+   "handoff_to_billing_specialist",
+   "respond_to_customer"
+  ],
+  "simulated_tool_calls": [
+   {
+    "name": "lookup_order",
+    "status": "success",
+    "input": {
+     "order_id": "8129"
+    },
+    "output": {
+     "status": "success"
+    },
+    "description": "Support tool in billing workflow."
+   },
+   {
+    "name": "create_handoff",
+    "status": "success",
+    "input": {
+     "target": "billing_specialist"
+    },
+    "output": {
+     "status": "success"
+    },
+    "description": "Support tool in billing workflow."
+   }
+  ],
+  "simulated_final_answer": "I understand how frustrating a double charge is. I confirmed the duplicate charge on order 8129 and escalated it to billing for immediate refund review.",
+  "task_definition": "Resolve this billing support request with the required steps, correct handoff (billing_specialist), and a clear final answer.",
+  "expected_plan": [
+   "lookup_order",
+   "handoff_to_billing_specialist",
+   "respond_to_customer"
+  ],
+  "expected_tools": [
+   {
+    "name": "lookup_order",
+    "description": "Core billing lookup step.",
+    "input": {
+     "case_id": "refund_double_charge_variant_1",
+     "workflow": "billing"
+    },
+    "output": {}
+   },
+   {
+    "name": "create_handoff",
+    "description": "Escalation handoff tool.",
+    "input": {
+     "target": "billing_specialist",
+     "reason": "billing"
+    },
+    "output": {}
+   }
+  ],
+  "scenario_group_id": "billing::billing_issue::billing_specialist"
+ },
+ {
+  "case_id": "refund_double_charge_variant_2",
+  "workflow": "billing",
+  "agent_type": "triage_agent",
+  "customer_request": "I was charged twice for order 8129. Please fix it.",
+  "required_step": "lookup_order",
+  "expected_handoff": "billing_specialist",
+  "reference_answer": "I found the duplicate charge and handed this to billing for refund review.",
+  "max_retries": 2,
+  "simulated_retry_count": 1,
+  "simulated_handoff_target": "billing_specialist",
+  "simulated_steps_completed": [
+   "lookup_order",
+   "verify_duplicate_charge",
+   "handoff_to_billing_specialist",
+   "respond_to_customer"
+  ],
+  "simulated_tool_calls": [
+   {
+    "name": "lookup_order",
+    "status": "success",
+    "input": {
+     "order_id": "8129"
+    },
+    "output": {
+     "status": "success"
+    },
+    "description": "Support tool in billing workflow."
+   },
+   {
+    "name": "create_handoff",
+    "status": "success",
+    "input": {
+     "target": "billing_specialist"
+    },
+    "output": {
+     "status": "success"
+    },
+    "description": "Support tool in billing workflow."
+   }
+  ],
+  "simulated_final_answer": "Duplicate charge on order 8129 was confirmed and the case has been handed to billing for refund processing.",
+  "task_definition": "Resolve this billing support request with the required steps, correct handoff (billing_specialist), and a clear final answer.",
+  "expected_plan": [
+   "lookup_order",
+   "handoff_to_billing_specialist",
+   "respond_to_customer"
+  ],
+  "expected_tools": [
+   {
+    "name": "lookup_order",
+    "description": "Core billing lookup step.",
+    "input": {
+     "case_id": "refund_double_charge_variant_2",
+     "workflow": "billing"
+    },
+    "output": {}
+   },
+   {
+    "name": "create_handoff",
+    "description": "Escalation handoff tool.",
+    "input": {
+     "target": "billing_specialist",
+     "reason": "billing"
+    },
+    "output": {}
+   }
+  ],
+  "scenario_group_id": "billing::billing_issue::billing_specialist"
+ },
+ {
+  "case_id": "refund_double_charge_variant_3",
+  "workflow": "billing",
+  "agent_type": "triage_agent",
+  "customer_request": "I was charged twice for order 8129. Please fix it.",
+  "required_step": "lookup_order",
+  "expected_handoff": "billing_specialist",
+  "reference_answer": "I found the duplicate charge and handed this to billing for refund review.",
+  "max_retries": 2,
+  "simulated_retry_count": 1,
+  "simulated_handoff_target": "billing_specialist",
+  "simulated_steps_completed": [
+   "lookup_order",
+   "verify_duplicate_charge",
+   "handoff_to_billing_specialist",
+   "respond_to_customer"
+  ],
+  "simulated_tool_calls": [
+   {
+    "name": "lookup_order",
+    "status": "success",
+    "input": {
+     "order_id": "8129"
+    },
+    "output": {
+     "status": "success"
+    },
+    "description": "Support tool in billing workflow."
+   },
+   {
+    "name": "create_handoff",
+    "status": "success",
+    "input": {
+     "target": "billing_specialist"
+    },
+    "output": {
+     "status": "success"
+    },
+    "description": "Support tool in billing workflow."
+   }
+  ],
+  "simulated_final_answer": "We will look into it and get back to you.",
+  "task_definition": "Resolve this billing support request with the required steps, correct handoff (billing_specialist), and a clear final answer.",
+  "expected_plan": [
+   "lookup_order",
+   "handoff_to_billing_specialist",
+   "respond_to_customer"
+  ],
+  "expected_tools": [
+   {
+    "name": "lookup_order",
+    "description": "Core billing lookup step.",
+    "input": {
+     "case_id": "refund_double_charge_variant_3",
+     "workflow": "billing"
+    },
+    "output": {}
+   },
+   {
+    "name": "create_handoff",
+    "description": "Escalation handoff tool.",
+    "input": {
+     "target": "billing_specialist",
+     "reason": "billing"
+    },
+    "output": {}
+   }
+  ],
+  "scenario_group_id": "billing::billing_issue::billing_specialist"
+ }
+]

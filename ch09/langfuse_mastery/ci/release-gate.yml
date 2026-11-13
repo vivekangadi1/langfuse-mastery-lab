@@ -1,0 +1,45 @@
+# Module 10, TODO 5b: the release gate as a GitHub Actions workflow.
+#
+# NOT active: GitHub only runs workflows under .github/workflows/. Copy it there once your Langfuse is reachable from
+# GitHub's runners (a hosted or self-hosted URL, not localhost) and the secrets below exist (repo Settings -> Secrets
+# and variables -> Actions). The notebook lints this file with langfuse_lab.ci_workflow.workflow_problems().
+#
+# Fill in every TODO. What the gate needs from the workflow:
+# - triggers: every pull_request that touches the agent or the gate (paths: ch09/langfuse_lab/**,
+#   ch09/langfuse_mastery/ci/**), and workflow_dispatch with an input `candidate_label` to gate any label by hand;
+# - least privilege (permissions: contents: read) and one run per PR at a time (concurrency, cancel-in-progress);
+# - a time budget: timeout-minutes (<= 30) on the job;
+# - env for the gate step(s): LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_BASE_URL, AZURE_OPENAI_ENDPOINT,
+#   AZURE_OPENAI_API_KEY from ${{ secrets.* }} (never in the file); CANDIDATE_LABEL (the dispatch input, else
+#   "candidate"); GATE_HEAD_SHA = the PR's head commit (github.event.pull_request.head.sha || github.sha);
+#   GATE_DATASET_VERSION from a repository variable (the pin is reviewed like code); GATE_ARTIFACTS;
+# - the gate step: python -m pytest langfuse_mastery/ci ... --junitxml=... (from ch09/);
+# - the report even when the gate fails: actions/upload-artifact with `if: always()` (+ the Markdown summary into
+#   $GITHUB_STEP_SUMMARY).
+name: langfuse-release-gate
+
+# TODO: on: (pull_request with paths, workflow_dispatch with inputs.candidate_label)
+
+# TODO: permissions
+
+# TODO: concurrency
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    # TODO: timeout-minutes
+    # TODO: env
+    defaults:
+      run:
+        working-directory: ch09
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: ch09/langfuse_lab/requirements.txt
+      - run: pip install -r langfuse_lab/requirements.txt
+      # TODO: the gate step (pytest langfuse_mastery/ci, JUnit into $GATE_ARTIFACTS)
+      # TODO: the job summary ($GATE_ARTIFACTS/gate-summary.md >> $GITHUB_STEP_SUMMARY), even on failure
+      # TODO: upload $GATE_ARTIFACTS with actions/upload-artifact, even on failure
